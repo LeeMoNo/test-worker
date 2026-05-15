@@ -13,7 +13,14 @@
 	"upload_source_maps": true,
 	"compatibility_flags": [
 		"nodejs_compat"
-	]
+	],
+	"r2_buckets": [
+		{
+		  "binding": "R2_BUCKET",
+		  "bucket_name": "test-data",
+		  "preview_bucket_name": "test-data"
+		}
+	  ],
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -31,7 +38,10 @@
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
+	"vars": {  
+		"MY_VARIABLE": "production_value",
+		"SUPABASE_URL": "https://ztulfpkqzjuwpwyicavq.supabase.co",
+	}
 	/**
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
