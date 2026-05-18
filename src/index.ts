@@ -79,7 +79,7 @@ app.use('/api/admin/*', async (c, next) => {
 	if (token !== c.env.SUPABASE_SERVICE_KEY) {
 		console.log("收到的Key:", token);
 		console.log("预设的Key:", c.env.SUPABASE_SERVICE_KEY);
-		return c.json({ error: '无权限' + token + ' ' + c.env.SUPABASE_SERVICE_KEY}, 401)
+		return c.json({ error: '无权限' + token + ' ' + c.env.SUPABASE_SERVICE_KEY }, 401)
 	}
 	await next()
 })
@@ -159,33 +159,59 @@ app.delete('/api/admin/articles/:id', async (c) => {
 app.post('/api/admin/upload', async (c) => {
 	const formData = await c.req.formData()
 	const file = formData.get('file') as File
-  
+
 	if (!file) {
-	  return c.json({ error: '没有收到文件' }, 400)
+		return c.json({ error: '没有收到文件' }, 400)
 	}
-  
+
 	// 验证文件类型
 	const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 	if (!allowedTypes.includes(file.type)) {
-	  return c.json({ error: '只支持 jpg/png/gif/webp' }, 400)
+		return c.json({ error: '只支持 jpg/png/gif/webp' }, 400)
 	}
-  
+
 	// 生成唯一文件名：images/2024/05/时间戳-原文件名
 	const date = new Date()
 	const folder = `images/${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}`
 	const filename = `${Date.now()}-${file.name.replace(/\s/g, '_')}`
 	const key = `${folder}/${filename}`
-  
+
 	// 上传到 R2
 	await c.env.R2_BUCKET.put(key, await file.arrayBuffer(), {
-	  httpMetadata: {
-		contentType: file.type,
-		cacheControl: 'public, max-age=31536000', // 缓存一年
-	  },
+		httpMetadata: {
+			contentType: file.type,
+			cacheControl: 'public, max-age=31536000', // 缓存一年
+		},
 	})
-  
+
 	const url = `${c.env.R2_PUBLIC_URL}/${key}`
 	return c.json({ url, key })
-  })
+})
+
+
+// 管理端：获取所有文章（含草稿）
+app.get('/api/admin/articles', async (c) => {
+	const db = getDB(c.env)
+	const { data, error } = await db
+		.from('articles')
+		.select('*')
+		.order('created_at', { ascending: false })
+
+	if (error) return c.json({ error: error.message }, 500)
+	return c.json(data)
+})
+
+// 管理端：获取单篇（含草稿）
+app.get('/api/admin/articles/:id', async (c) => {
+	const db = getDB(c.env)
+	const { data, error } = await db
+		.from('articles')
+		.select('*')
+		.eq('id', c.req.param('id'))
+		.single()
+
+	if (error) return c.json({ error: '文章不存在' }, 404)
+	return c.json(data)
+})
 
 export default app

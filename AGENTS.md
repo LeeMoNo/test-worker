@@ -41,4 +41,6 @@ If the application uses Durable Objects or Workflows, refer to the relevant best
 - Workflows: https://developers.cloudflare.com/workflows/build/rules-of-workflows/
 
 项目名称=test-worker
-https://test-worker.wasai-test.workers.dev
+API地址：https://test-worker.wasai-test.workers.dev
+
+服务测试运行：wrangler dev
