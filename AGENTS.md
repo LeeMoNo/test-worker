@@ -44,3 +44,4 @@ If the application uses Durable Objects or Workflows, refer to the relevant best
 API地址：https://test-worker.wasai-test.workers.dev
 
 服务测试运行：wrangler dev
+服务器部署：npx wrangler deploy

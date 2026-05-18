@@ -44,17 +44,23 @@ app.get('/test', (c) => {
 // ─── App 端接口（用 anon key 也能访问，RLS 保护） ───────────
 
 // 获取已发布文章列表
+// src/index.ts 里更新 GET /api/articles
 app.get('/api/articles', async (c) => {
 	const db = getDB(c.env)
+	const page = Number(c.req.query('page') ?? 1)
+	const limit = Number(c.req.query('limit') ?? 20)
+	const from = (page - 1) * limit
+  
 	const { data, error } = await db
-		.from('articles')
-		.select('id, title, cover_url, type, published_at')
-		.eq('status', 'published')
-		.order('published_at', { ascending: false })
-
+	  .from('articles')
+	  .select('id, title, cover_url, type, published_at, created_at')
+	  .eq('status', 'published')
+	  .order('published_at', { ascending: false })
+	  .range(from, from + limit - 1)
+  
 	if (error) return c.json({ error: error.message }, 500)
 	return c.json(data)
-})
+  })
 
 // 获取文章详情
 app.get('/api/articles/:id', async (c) => {
@@ -213,5 +219,105 @@ app.get('/api/admin/articles/:id', async (c) => {
 	if (error) return c.json({ error: '文章不存在' }, 404)
 	return c.json(data)
 })
+
+// ─── 阅读量 + 互动接口 ────────────────────────────────────
+
+// 记录阅读（App 进入详情页时调用一次）
+app.post('/api/articles/:id/view', async (c) => {
+	const db = getDB(c.env)
+	await db.rpc('increment_view_count', { article_id: c.req.param('id') })
+	return c.json({ ok: true })
+  })
+  
+  // 点赞 / 踩（传入 device_id 防重复，可切换）
+  app.post('/api/articles/:id/react', async (c) => {
+	const db = getDB(c.env)
+	const articleId = c.req.param('id')
+	const { device_id, reaction } = await c.req.json<{
+	  device_id: string
+	  reaction: 'like' | 'dislike'
+	}>()
+  
+	if (!device_id || !['like', 'dislike'].includes(reaction)) {
+	  return c.json({ error: '参数错误' }, 400)
+	}
+  
+	// 查询当前投票状态
+	const { data: existing } = await db
+	  .from('article_reactions')
+	  .select('reaction')
+	  .eq('article_id', articleId)
+	  .eq('device_id', device_id)
+	  .single()
+  
+	let likeChange = 0
+	let dislikeChange = 0
+	let newReaction: string | null = reaction
+  
+	if (!existing) {
+	  // 首次投票
+	  await db.from('article_reactions').insert({ article_id: articleId, device_id, reaction })
+	  reaction === 'like' ? likeChange++ : dislikeChange++
+  
+	} else if (existing.reaction === reaction) {
+	  // 点同一个 → 取消
+	  await db.from('article_reactions')
+		.delete()
+		.eq('article_id', articleId)
+		.eq('device_id', device_id)
+	  reaction === 'like' ? likeChange-- : dislikeChange--
+	  newReaction = null
+  
+	} else {
+	  // 从 like 改成 dislike 或反之
+	  await db.from('article_reactions')
+		.update({ reaction })
+		.eq('article_id', articleId)
+		.eq('device_id', device_id)
+	  if (reaction === 'like') { likeChange++; dislikeChange-- }
+	  else { likeChange--; dislikeChange++ }
+	}
+  
+	// 更新文章计数
+	if (likeChange !== 0 || dislikeChange !== 0) {
+	  await db.rpc('update_reaction_counts', {
+		p_article_id: articleId,
+		p_like_change: likeChange,
+		p_dislike_change: dislikeChange,
+	  })
+	}
+  
+	// 返回最新数据
+	const { data: article } = await db
+	  .from('articles')
+	  .select('like_count, dislike_count, view_count')
+	  .eq('id', articleId)
+	  .single()
+  
+	return c.json({ ...article, user_reaction: newReaction })
+  })
+  
+  // 查询当前设备的投票状态
+  app.get('/api/articles/:id/reaction', async (c) => {
+	const db = getDB(c.env)
+	const deviceId = c.req.query('device_id')
+  
+	const [{ data: article }, { data: reaction }] = await Promise.all([
+	  db.from('articles')
+		.select('view_count, like_count, dislike_count')
+		.eq('id', c.req.param('id'))
+		.single(),
+	  db.from('article_reactions')
+		.select('reaction')
+		.eq('article_id', c.req.param('id'))
+		.eq('device_id', deviceId ?? '')
+		.single(),
+	])
+  
+	return c.json({
+	  ...article,
+	  user_reaction: reaction?.reaction ?? null,
+	})
+  })
 
 export default app
